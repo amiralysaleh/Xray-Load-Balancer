@@ -1,0 +1,62 @@
+import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+
+def get_raw_configs():
+    url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.text.strip().split('\n')
+    return []
+
+def setup_driver():
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=chrome_options)
+
+def process_configs():
+    configs = get_raw_configs()
+    if not configs:
+        print("No configs found!")
+        return
+    
+    driver = setup_driver()
+    try:
+        driver.get("https://surfboardv2ray.pythonanywhere.com")
+        
+        textarea = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "textarea"))
+        )
+        textarea.send_keys('\n'.join(configs))
+        
+        convert_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Convert')]")
+        convert_button.click()
+        
+        time.sleep(5)
+        
+        result_textarea = driver.find_element(By.CSS_SELECTOR, "textarea")
+        result = result_textarea.get_attribute('value')
+        
+        with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
+            f.write(result)
+            
+        print("Config processing completed successfully!")
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    process_configs()
