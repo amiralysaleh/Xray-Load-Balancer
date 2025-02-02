@@ -8,6 +8,8 @@ on:
 jobs:
   update-configs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout repository
@@ -23,9 +25,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests selenium webdriver-manager beautifulsoup4
           
-      - name: Fetch and process configs
+      - name: Install Chrome
         run: |
-          cat > process_configs.py << 'EOL'
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+          
+      - name: Create and run script
+        run: |
+          mkdir -p scripts
+          cat > scripts/process_configs.py << 'EOL'
           import requests
           from selenium import webdriver
           from selenium.webdriver.chrome.service import Service
@@ -61,27 +69,21 @@ jobs:
               
               driver = setup_driver()
               try:
-                  # Navigate to the load balancer page
                   driver.get("https://surfboardv2ray.pythonanywhere.com")
                   
-                  # Wait for textarea to be present and insert configs
                   textarea = WebDriverWait(driver, 10).until(
                       EC.presence_of_element_located((By.CSS_SELECTOR, "textarea"))
                   )
                   textarea.send_keys('\n'.join(configs))
                   
-                  # Click convert button
                   convert_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Convert')]")
                   convert_button.click()
                   
-                  # Wait for result
-                  time.sleep(5)  # Allow time for processing
+                  time.sleep(5)
                   
-                  # Get result from textarea
                   result_textarea = driver.find_element(By.CSS_SELECTOR, "textarea")
                   result = result_textarea.get_attribute('value')
                   
-                  # Save the result
                   with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
                       f.write(result)
                       
@@ -96,17 +98,14 @@ jobs:
               process_configs()
           EOL
           
-          python process_configs.py
+          python scripts/process_configs.py
           
-      - name: Install Chrome
+      - name: Commit and push if there are changes
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
-          
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
           git add v2ray_processed.txt
-          git commit -m "Update V2Ray configs [skip ci]"
+          git add scripts/process_configs.py
+          git status
+          git diff --staged --quiet || git commit -m "Update V2Ray configs [skip ci]"
           git push
