@@ -1,5 +1,6 @@
 import requests
-import json
+from bs4 import BeautifulSoup
+import time
 
 def get_raw_configs():
     url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
@@ -23,21 +24,41 @@ def process_configs():
     print(f"Found {len(configs)} configs")
     
     try:
-        # Prepare the request
-        url = "https://surfboardv2ray.pythonanywhere.com/convert"
+        # First get the session and CSRF token
+        session = requests.Session()
+        base_url = "https://surfboardv2ray.pythonanywhere.com/"
+        
+        # Get initial page to set up session
+        response = session.get(base_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find any hidden fields if they exist
+        hidden_fields = {}
+        for hidden in soup.find_all("input", type="hidden"):
+            hidden_fields[hidden.get('name')] = hidden.get('value')
+        
+        # Prepare form data
+        form_data = {
+            **hidden_fields,
+            'text': '\n'.join(configs)
+        }
+        
+        # Headers to mimic browser
         headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Origin': base_url.rstrip('/'),
+            'Referer': base_url
         }
         
-        # Join configs with newline and encode properly
-        data = {
-            'configs': '\n'.join(configs)
-        }
+        # Submit form
+        response = session.post(
+            f"{base_url}convert",
+            data=form_data,
+            headers=headers
+        )
         
-        # Send POST request
-        response = requests.post(url, data=data, headers=headers)
-        response.encoding = 'utf-8'
+        print(f"Response status: {response.status_code}")
+        print(f"Response headers: {dict(response.headers)}")
         
         if response.status_code == 200:
             result = response.text
@@ -53,6 +74,7 @@ def process_configs():
         
     except Exception as e:
         print(f"An error occurred: {str(e)}")
+        print(f"Full error details: ", e)
 
 if __name__ == "__main__":
     process_configs()
