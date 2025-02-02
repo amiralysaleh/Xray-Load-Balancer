@@ -1,6 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
-import time
+import json
 
 def get_raw_configs():
     url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
@@ -24,50 +23,37 @@ def process_configs():
     print(f"Found {len(configs)} configs")
     
     try:
-        # First get the session and CSRF token
-        session = requests.Session()
-        base_url = "https://surfboardv2ray.pythonanywhere.com/"
+        url = "https://surfboardv2ray.pythonanywhere.com/convert"
         
-        # Get initial page to set up session
-        response = session.get(base_url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find any hidden fields if they exist
-        hidden_fields = {}
-        for hidden in soup.find_all("input", type="hidden"):
-            hidden_fields[hidden.get('name')] = hidden.get('value')
-        
-        # Prepare form data
-        form_data = {
-            **hidden_fields,
-            'text': '\n'.join(configs)
+        # Prepare JSON payload
+        payload = {
+            "config": "\n".join(configs)
         }
         
-        # Headers to mimic browser
+        # Headers for JSON request
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Origin': base_url.rstrip('/'),
-            'Referer': base_url
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Submit form
-        response = session.post(
-            f"{base_url}convert",
-            data=form_data,
-            headers=headers
-        )
+        # Send POST request with JSON data
+        response = requests.post(url, json=payload, headers=headers)
         
         print(f"Response status: {response.status_code}")
         print(f"Response headers: {dict(response.headers)}")
         
         if response.status_code == 200:
-            result = response.text
-            print("Successfully processed configs")
-            
-            # Save the result
-            with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
-                f.write(result)
-            print("Saved processed configs to file")
+            result = response.json()
+            if 'result' in result:
+                print("Successfully processed configs")
+                
+                # Save the result
+                with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
+                    f.write(result['result'])
+                print("Saved processed configs to file")
+            else:
+                print("Error: Response does not contain 'result' field")
+                print(f"Response content: {result}")
         else:
             print(f"Error: Server returned status code {response.status_code}")
             print(f"Response content: {response.text}")
