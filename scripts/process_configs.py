@@ -1,5 +1,6 @@
 import requests
 import json
+import jdatetime
 
 def get_raw_configs():
     url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
@@ -40,17 +41,27 @@ def process_configs():
         response = requests.post(url, json=payload, headers=headers)
         
         print(f"Response status: {response.status_code}")
-        print(f"Response headers: {dict(response.headers)}")
         
         if response.status_code == 200:
             result = response.json()
             if 'result' in result:
-                print("Successfully processed configs")
+                # Parse the JSON string from result
+                config_json = json.loads(result['result'])
+                
+                # Get current Persian date and time
+                now = jdatetime.datetime.now()
+                persian_datetime = now.strftime("%Y-%m-%d %H:%M")
+                
+                # Update the remarks
+                config_json['remarks'] = f"Xray-LB ({persian_datetime})"
+                
+                # Convert back to formatted JSON string
+                formatted_json = json.dumps(config_json, ensure_ascii=False, indent=2)
                 
                 # Save the result
                 with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
-                    f.write(result['result'])
-                print("Saved processed configs to file")
+                    f.write(formatted_json)
+                print("Successfully saved processed configs with Persian datetime")
             else:
                 print("Error: Response does not contain 'result' field")
                 print(f"Response content: {result}")
