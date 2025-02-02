@@ -21,35 +21,87 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4
+          pip install requests selenium webdriver-manager beautifulsoup4
           
       - name: Fetch and process configs
         run: |
           cat > process_configs.py << 'EOL'
           import requests
-          from bs4 import BeautifulSoup
-          import json
+          from selenium import webdriver
+          from selenium.webdriver.chrome.service import Service
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
+          from webdriver_manager.chrome import ChromeDriverManager
           import time
           
-          # Fetch raw configs
-          raw_configs_url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
-          response = requests.get(raw_configs_url)
-          configs = response.text.strip().split('\n')
+          def get_raw_configs():
+              url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
+              response = requests.get(url)
+              if response.status_code == 200:
+                  return response.text.strip().split('\n')
+              return []
           
-          # Process through load balancer
-          load_balancer_url = "https://surfboardv2ray.pythonanywhere.com/convert"
+          def setup_driver():
+              chrome_options = Options()
+              chrome_options.add_argument('--headless')
+              chrome_options.add_argument('--no-sandbox')
+              chrome_options.add_argument('--disable-dev-shm-usage')
+              chrome_options.add_argument('--disable-gpu')
+              
+              service = Service(ChromeDriverManager().install())
+              return webdriver.Chrome(service=service, options=chrome_options)
           
-          # Send configs to load balancer
-          payload = {'configs': '\n'.join(configs)}
-          headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-          response = requests.post(load_balancer_url, data=payload, headers=headers)
+          def process_configs():
+              configs = get_raw_configs()
+              if not configs:
+                  print("No configs found!")
+                  return
+              
+              driver = setup_driver()
+              try:
+                  # Navigate to the load balancer page
+                  driver.get("https://surfboardv2ray.pythonanywhere.com")
+                  
+                  # Wait for textarea to be present and insert configs
+                  textarea = WebDriverWait(driver, 10).until(
+                      EC.presence_of_element_located((By.CSS_SELECTOR, "textarea"))
+                  )
+                  textarea.send_keys('\n'.join(configs))
+                  
+                  # Click convert button
+                  convert_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Convert')]")
+                  convert_button.click()
+                  
+                  # Wait for result
+                  time.sleep(5)  # Allow time for processing
+                  
+                  # Get result from textarea
+                  result_textarea = driver.find_element(By.CSS_SELECTOR, "textarea")
+                  result = result_textarea.get_attribute('value')
+                  
+                  # Save the result
+                  with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
+                      f.write(result)
+                      
+                  print("Config processing completed successfully!")
+                  
+              except Exception as e:
+                  print(f"An error occurred: {str(e)}")
+              finally:
+                  driver.quit()
           
-          # Save processed configs
-          with open('v2ray_processed.txt', 'w') as f:
-              f.write(response.text)
+          if __name__ == "__main__":
+              process_configs()
           EOL
           
           python process_configs.py
+          
+      - name: Install Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
           
       - name: Commit and push changes
         run: |
