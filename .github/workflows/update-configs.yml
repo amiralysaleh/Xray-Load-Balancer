@@ -2,8 +2,8 @@ name: Update V2Ray Configs
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Runs every 4 hours
-  workflow_dispatch:  # Allows manual trigger
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
 
 jobs:
   update-configs:
@@ -23,43 +23,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests selenium webdriver-manager beautifulsoup4
-          
-      - name: Install Chrome
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
+          pip install requests
           
       - name: Create and run script
         run: |
           mkdir -p scripts
           cat > scripts/process_configs.py << 'EOL'
           import requests
-          from selenium import webdriver
-          from selenium.webdriver.chrome.service import Service
-          from selenium.webdriver.chrome.options import Options
-          from selenium.webdriver.common.by import By
-          from selenium.webdriver.support.ui import WebDriverWait
-          from selenium.webdriver.support import expected_conditions as EC
-          from webdriver_manager.chrome import ChromeDriverManager
-          import time
+          import json
           
           def get_raw_configs():
               url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
-              response = requests.get(url)
-              if response.status_code == 200:
-                  return response.text.strip().split('\n')
-              return []
-          
-          def setup_driver():
-              chrome_options = Options()
-              chrome_options.add_argument('--headless')
-              chrome_options.add_argument('--no-sandbox')
-              chrome_options.add_argument('--disable-dev-shm-usage')
-              chrome_options.add_argument('--disable-gpu')
-              
-              service = Service(ChromeDriverManager().install())
-              return webdriver.Chrome(service=service, options=chrome_options)
+              try:
+                  response = requests.get(url)
+                  response.encoding = 'utf-8'
+                  if response.status_code == 200:
+                      return response.text.strip().split('\n')
+                  print(f"Failed to get configs. Status code: {response.status_code}")
+                  return []
+              except Exception as e:
+                  print(f"Error getting configs: {str(e)}")
+                  return []
           
           def process_configs():
               configs = get_raw_configs()
@@ -67,32 +51,39 @@ jobs:
                   print("No configs found!")
                   return
               
-              driver = setup_driver()
+              print(f"Found {len(configs)} configs")
+              
               try:
-                  driver.get("https://surfboardv2ray.pythonanywhere.com")
+                  # Prepare the request
+                  url = "https://surfboardv2ray.pythonanywhere.com/convert"
+                  headers = {
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                  }
                   
-                  textarea = WebDriverWait(driver, 10).until(
-                      EC.presence_of_element_located((By.CSS_SELECTOR, "textarea"))
-                  )
-                  textarea.send_keys('\n'.join(configs))
+                  # Join configs with newline and encode properly
+                  data = {
+                      'configs': '\n'.join(configs)
+                  }
                   
-                  convert_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Convert')]")
-                  convert_button.click()
+                  # Send POST request
+                  response = requests.post(url, data=data, headers=headers)
+                  response.encoding = 'utf-8'
                   
-                  time.sleep(5)
-                  
-                  result_textarea = driver.find_element(By.CSS_SELECTOR, "textarea")
-                  result = result_textarea.get_attribute('value')
-                  
-                  with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
-                      f.write(result)
+                  if response.status_code == 200:
+                      result = response.text
+                      print("Successfully processed configs")
                       
-                  print("Config processing completed successfully!")
+                      # Save the result
+                      with open('v2ray_processed.txt', 'w', encoding='utf-8') as f:
+                          f.write(result)
+                      print("Saved processed configs to file")
+                  else:
+                      print(f"Error: Server returned status code {response.status_code}")
+                      print(f"Response content: {response.text}")
                   
               except Exception as e:
                   print(f"An error occurred: {str(e)}")
-              finally:
-                  driver.quit()
           
           if __name__ == "__main__":
               process_configs()
@@ -106,6 +97,5 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add v2ray_processed.txt
           git add scripts/process_configs.py
-          git status
           git diff --staged --quiet || git commit -m "Update V2Ray configs [skip ci]"
           git push
