@@ -1,0 +1,60 @@
+name: Update V2Ray Configs
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Runs every 4 hours
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  update-configs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+          
+      - name: Fetch and process configs
+        run: |
+          cat > process_configs.py << 'EOL'
+          import requests
+          from bs4 import BeautifulSoup
+          import json
+          import time
+          
+          # Fetch raw configs
+          raw_configs_url = "https://raw.githubusercontent.com/roosterkid/openproxylist/refs/heads/main/V2RAY_RAW.txt"
+          response = requests.get(raw_configs_url)
+          configs = response.text.strip().split('\n')
+          
+          # Process through load balancer
+          load_balancer_url = "https://surfboardv2ray.pythonanywhere.com/convert"
+          
+          # Send configs to load balancer
+          payload = {'configs': '\n'.join(configs)}
+          headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+          response = requests.post(load_balancer_url, data=payload, headers=headers)
+          
+          # Save processed configs
+          with open('v2ray_processed.txt', 'w') as f:
+              f.write(response.text)
+          EOL
+          
+          python process_configs.py
+          
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add v2ray_processed.txt
+          git commit -m "Update V2Ray configs [skip ci]"
+          git push
